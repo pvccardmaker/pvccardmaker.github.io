@@ -1,0 +1,407 @@
+<!DOCTYPE html> 
+<html lang="en"> 
+<head> 
+    <meta name="google-adsense-account" content="ca-pub-7029803763881134">
+    <meta charset="UTF-8"> 
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"> 
+    <title>Pan Card Converter</title> 
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/css/bootstrap.min.css"> 
+    <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@2.16.105/build/pdf.min.js"></script> 
+    <style>
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: linear-gradient(135deg, #a8edea, #fed6e3);
+            color: #333;
+            text-align: center;
+            animation: fadeIn 1s ease-in-out;
+            padding: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            animation: slideIn 1s ease-in-out;
+        }
+        .card-container {
+            width: 250px;
+            height: 150px;
+            margin: 20px auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+            background-color: #fff;
+            display: inline-block;
+            align-items: center;
+            justify-content: center;
+            background-size: cover;
+            background-position: center;
+            border-radius: 8px;
+        }
+        #instructionsModal {
+            z-index: 2000;
+        }
+        .loading-indicator {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 24px;
+            font-weight: bold;
+            display: none;
+            color: #007bff;
+        }
+        .btn {
+            transition: all 0.3s ease-in-out;
+            padding: 12px 20px;
+            font-size: 16px;
+            border-radius: 8px;
+        }
+        .btn:hover {
+            transform: translateY(-3px);
+        }
+        .btn-primary {
+            background: #007bff;
+            border: none;
+        }
+        .btn-info {
+            background: #17a2b8;
+            border: none;
+        }
+        .btn-success {
+            background: #28a745;
+            border: none;
+        }
+        .error-message {
+            color: red;
+        }
+        /* Added Styles for Size Box and Crop Settings */
+        .card-size-box { 
+            padding: 12px; 
+            background: #fffbe6; 
+            border-left: 4px solid #e6a817; 
+            border-radius: 8px; 
+            margin-bottom: 20px; 
+            text-align: left; 
+        }
+        .card-size-box label { font-weight: bold; margin-right: 10px; }
+        .card-size-box select { padding: 4px 8px; border-radius: 4px; }
+        .trim-inputs label { font-weight: normal; margin-right: 15px; }
+    </style>
+</head> 
+<body> 
+    <div class="container"> 
+        <h2 class="text-primary">Pan Card Converter</h2> 
+        <p class="text-muted">Convert your Pan card image or PDF to a PVC card print-ready file</p> 
+        <button type="button" class="btn btn-info" data-toggle="modal" data-target="#instructionsModal">Instructions</button> 
+        <input type="file" id="fileInput" accept=".pdf, .jpg, .jpeg, .png" class="form-control-file mt-3"> 
+        <button id="convertButton" class="btn btn-primary mt-3">Convert</button> 
+        <div id="loadingIndicator" class="loading-indicator">Processing...</div> 
+        
+        <!-- Added Output Resolution & Crop Fine-tuning Elements -->
+        <div class="card-size-box mt-4">
+            <label for="dpiSelect">Output resolution (standard CR80 card, 3.375in x 2.125in):</label>
+            <select id="dpiSelect">
+                <option value="600" selected>600 DPI (2025 x 1275 px) - high quality</option>
+                <option value="300">300 DPI (1013 x 638 px) - most card printers</option>
+                <option value="150">150 DPI (506 x 319 px) - quick preview</option>
+            </select>
+        </div>
+
+        <div class="card-size-box mt-2">
+            <label>Fine-tune Crop Settings (Trim %):</label>
+
+            <div class="mt-2">
+                <strong>Front Card Trim (%):</strong>
+                <div class="trim-inputs" style="display:flex; gap:10px; flex-wrap:wrap; margin-top:4px;">
+                    <label>Top <input type="number" id="trimTopLeft" value="3" step="0.5" style="width:60px;"></label>
+                    <label>Bottom <input type="number" id="trimBottomLeft" value="16" step="0.5" style="width:60px;"></label>
+                    <label>Left <input type="number" id="trimLeftLeft" value="-11" step="0.5" style="width:60px;"></label>
+                    <label>Right <input type="number" id="trimRightLeft" value="30" step="0.5" style="width:60px;"></label>
+                </div>
+            </div>
+
+            <div class="mt-3">
+                <strong>Back Card Trim (%):</strong>
+                <div class="trim-inputs" style="display:flex; gap:10px; flex-wrap:wrap; margin-top:4px;">
+                    <label>Top <input type="number" id="trimTopRight" value="3.5" step="0.5" style="width:60px;"></label>
+                    <label>Bottom <input type="number" id="trimBottomRight" value="16" step="0.5" style="width:60px;"></label>
+                    <label>Left <input type="number" id="trimLeftRight" value="2" step="0.5" style="width:60px;"></label>
+                    <label>Right <input type="number" id="trimRightRight" value="17" step="0.5" style="width:60px;"></label>
+                </div>
+            </div>
+
+            <button id="applyTrimBtn" class="btn btn-sm btn-secondary mt-3">Re-crop Cards</button>
+        </div>
+
+        <div>
+            <div id="cardContainerLeft" class="card-container"></div> 
+            <div id="cardContainerRight" class="card-container"></div> 
+        </div>
+        <div>
+            <a id="downloadLinkLeft" class="btn btn-success mt-3" style="display: none;">Download Left</a> 
+            <a id="downloadLinkRight" class="btn btn-success mt-3" style="display: none;">Download Right</a> 
+        </div>
+    </div> 
+
+    <!-- Instructions Modal --> 
+    <div class="modal fade" id="instructionsModal" tabindex="-1" role="dialog" aria-labelledby="instructionsModalLabel" aria-hidden="true"> 
+        <div class="modal-dialog" role="document"> 
+            <div class="modal-content"> 
+                <div class="modal-header"> 
+                    <h5 class="modal-title text-info" id="instructionsModalLabel">Instructions</h5> 
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close"> 
+                        <span aria-hidden="true">&times;</span> 
+                    </button> 
+                </div> 
+                <div class="modal-body text-left"> 
+                    <p>1. Upload your Pan card image (jpg, jpeg, png) or PDF file.</p> 
+                    <p>2. Click the "Convert" button to generate the PVC card image.</p> 
+                    <p>3. Adjust the Output Resolution and Fine-tune Trim % if the crop is not perfectly aligned, then click "Re-crop Cards".</p>
+                    <p>4. Click the "Download" buttons to save the images.</p> 
+                </div> 
+                <div class="modal-footer"> 
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button> 
+                </div> 
+            </div> 
+        </div> 
+    </div> 
+
+    <!-- Password Input Modal --> 
+    <div class="modal fade" id="passwordModal" tabindex="-1" role="dialog" aria-labelledby="passwordModalLabel" aria-hidden="true"> 
+        <div class="modal-dialog" role="document"> 
+            <div class="modal-content"> 
+                <div class="modal-header"> 
+                    <h5 class="modal-title text-info" id="passwordModalLabel">Enter Password</h5> 
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close"> 
+                        <span aria-hidden="true">&times;</span> 
+                    </button> 
+                </div> 
+                <div class="modal-body"> 
+                    <input type="password" id="passwordInput" class="form-control" placeholder="Enter password"> 
+                </div> 
+                <div class="modal-footer"> 
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button> 
+                    <button type="button" id="passwordSubmit" class="btn btn-primary">Submit</button> 
+                </div> 
+            </div> 
+        </div> 
+    </div> 
+
+    <!-- Error Message Modal --> 
+    <div class="modal fade" id="errorModal" tabindex="-1" role="dialog" aria-labelledby="errorModalLabel" aria-hidden="true"> 
+        <div class="modal-dialog" role="document"> 
+            <div class="modal-content"> 
+                <div class="modal-header"> 
+                    <h5 class="modal-title text-danger" id="errorModalLabel">Error</h5> 
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close"> 
+                        <span aria-hidden="true">&times;</span> 
+                    </button> 
+                </div> 
+                <div class="modal-body" id="errorModalBody"> 
+                    <!-- Error message will be inserted here --> 
+                </div> 
+                <div class="modal-footer"> 
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button> 
+                </div> 
+            </div> 
+        </div> 
+    </div> 
+
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script> 
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script> 
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@2.16.105/build/pdf.worker.min.js';
+
+        // Variable to hold the original uncropped image so we can re-crop instantly
+        let lastDataUrl = null;
+
+        function showErrorModal(message) { 
+            document.getElementById('errorModalBody').innerText = message; 
+            $('#errorModal').modal('show'); 
+        } 
+
+        async function unlockPDF(data, password) { 
+            try { 
+                return await pdfjsLib.getDocument({data, password}).promise; 
+            } catch (error) { 
+                if (error.name === 'PasswordException') { 
+                    return null; 
+                } 
+                throw error; 
+            } 
+        } 
+
+        // Extracted rendering logic to reuse for both protected and unprotected PDFs
+        async function renderPDF(pdf) {
+            const page = await pdf.getPage(1); 
+            const scale = 4; 
+            const viewport = page.getViewport({ scale: scale }); 
+            const canvas = document.createElement("canvas"); 
+            const ctx = canvas.getContext("2d"); 
+            canvas.width = viewport.width; 
+            canvas.height = viewport.height;
+
+            await page.render({ canvasContext: ctx, viewport: viewport }).promise; 
+            processImage(canvas.toDataURL("image/png"));
+        }
+
+        function processImage(imageData) { 
+            lastDataUrl = imageData; // Save image state for immediate re-cropping
+            const image = new Image(); 
+            image.onload = () => { 
+                const width = image.width; 
+                const height = image.height; 
+
+                // Original Base calculations
+                const startX = 278; 
+                const bottomCropHeight = Math.ceil(height / 4.4); 
+                const bottomCropY = height - bottomCropHeight;
+
+                let baseLeft = { x: startX, y: bottomCropY + 7, w: Math.ceil(width / 2), h: bottomCropHeight };
+                let baseRight = { x: Math.ceil(width / 2) + 45, y: bottomCropY + 5, w: Math.ceil(width / 2), h: bottomCropHeight };
+
+                // Get Trim Percentages
+                let fTrimTop = parseFloat(document.getElementById('trimTopLeft').value) / 100 || 0;
+                let fTrimBottom = parseFloat(document.getElementById('trimBottomLeft').value) / 100 || 0;
+                let fTrimLeft = parseFloat(document.getElementById('trimLeftLeft').value) / 100 || 0;
+                let fTrimRight = parseFloat(document.getElementById('trimRightLeft').value) / 100 || 0;
+
+                let bTrimTop = parseFloat(document.getElementById('trimTopRight').value) / 100 || 0;
+                let bTrimBottom = parseFloat(document.getElementById('trimBottomRight').value) / 100 || 0;
+                let bTrimLeft = parseFloat(document.getElementById('trimLeftRight').value) / 100 || 0;
+                let bTrimRight = parseFloat(document.getElementById('trimRightRight').value) / 100 || 0;
+
+                // Apply Trim calculations to Left Card
+                let l_x = baseLeft.x + (fTrimLeft * baseLeft.w);
+                let l_y = baseLeft.y + (fTrimTop * baseLeft.h);
+                let l_w = baseLeft.w - ((fTrimLeft + fTrimRight) * baseLeft.w);
+                let l_h = baseLeft.h - ((fTrimTop + fTrimBottom) * baseLeft.h);
+
+                // Apply Trim calculations to Right Card
+                let r_x = baseRight.x + (bTrimLeft * baseRight.w);
+                let r_y = baseRight.y + (bTrimTop * baseRight.h);
+                let r_w = baseRight.w - ((bTrimLeft + bTrimRight) * baseRight.w);
+                let r_h = baseRight.h - ((bTrimTop + bTrimBottom) * baseRight.h);
+
+                // Target standard CR80 PVC output resolution based on selection
+                const CARD_W_IN = 3.375; 
+                const CARD_H_IN = 2.125; 
+                const dpi = parseInt(document.getElementById('dpiSelect').value) || 600;
+                const targetW = Math.round(CARD_W_IN * dpi);
+                const targetH = Math.round(CARD_H_IN * dpi);
+
+                // Generate Left Canvas
+                const leftCanvas = document.createElement("canvas"); 
+                leftCanvas.width = targetW; 
+                leftCanvas.height = targetH; 
+                const leftCtx = leftCanvas.getContext("2d"); 
+                leftCtx.imageSmoothingQuality = 'high';
+                leftCtx.drawImage(image, l_x, l_y, l_w, l_h, 0, 0, targetW, targetH);
+
+                // Generate Right Canvas
+                const rightCanvas = document.createElement("canvas"); 
+                rightCanvas.width = targetW; 
+                rightCanvas.height = targetH; 
+                const rightCtx = rightCanvas.getContext("2d"); 
+                rightCtx.imageSmoothingQuality = 'high';
+                rightCtx.drawImage(image, r_x, r_y, r_w, r_h, 0, 0, targetW, targetH);
+
+                document.getElementById('cardContainerLeft').style.backgroundImage = `url(${leftCanvas.toDataURL("image/png")})`; 
+                document.getElementById('cardContainerRight').style.backgroundImage = `url(${rightCanvas.toDataURL("image/png")})`;
+
+                const leftLink = document.getElementById('downloadLinkLeft'); 
+                const rightLink = document.getElementById('downloadLinkRight'); 
+                leftLink.href = leftCanvas.toDataURL("image/png"); 
+                leftLink.download = 'left_Pan_card.png'; 
+                leftLink.style.display = 'inline-block'; 
+                rightLink.href = rightCanvas.toDataURL("image/png"); 
+                rightLink.download = 'right_Pan_card.png'; 
+                rightLink.style.display = 'inline-block'; 
+            }; 
+            image.src = imageData; 
+        } 
+
+        // Event listeners for re-cropping without needing to re-upload the file
+        document.getElementById('applyTrimBtn').addEventListener('click', () => {
+            if (lastDataUrl) {
+                processImage(lastDataUrl);
+            } else {
+                showErrorModal('Please upload and convert a file first.');
+            }
+        });
+
+        document.getElementById('dpiSelect').addEventListener('change', () => {
+            if (lastDataUrl) {
+                processImage(lastDataUrl);
+            }
+        });
+
+        document.getElementById('convertButton').addEventListener('click', async () => { 
+            const file = document.getElementById('fileInput').files[0]; 
+            if (!file) { 
+                showErrorModal('Please upload a file first.'); 
+                return; 
+            } 
+
+            // If it's an image, bypass PDF logic
+            if (file.type.match('image.*')) {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = e => processImage(e.target.result);
+                return;
+            }
+
+            const reader = new FileReader(); 
+            reader.readAsArrayBuffer(file); 
+            reader.onload = async () => { 
+                try { 
+                    let pdfData = new Uint8Array(reader.result); 
+                    let pdf = null;
+                    
+                    try {
+                        // First attempt: try to open without a password
+                        pdf = await pdfjsLib.getDocument({data: pdfData}).promise;
+                    } catch (e) {
+                        if (e.name === 'PasswordException') {
+                            // File requires a password, prompt the user
+                            $('#passwordModal').modal('show'); 
+                            
+                            document.getElementById('passwordSubmit').onclick = async () => { 
+                                const password = document.getElementById('passwordInput').value; 
+                                if (!password) { 
+                                    showErrorModal('Password is required!'); 
+                                    return; 
+                                } 
+                                try {
+                                    let authPdf = await unlockPDF(pdfData, password);
+                                    if (authPdf) {
+                                        await renderPDF(authPdf);
+                                        $('#passwordModal').modal('hide');
+                                    } else {
+                                        showErrorModal('Invalid password.'); 
+                                    }
+                                } catch (err) {
+                                    showErrorModal('Error processing file: ' + err.message); 
+                                }
+                            };
+                            return; // Stop execution here and wait for modal submit
+                        } else {
+                            throw e; // Bubble up other exceptions
+                        }
+                    }
+
+                    // If we made it here, the PDF did not have a password
+                    if (pdf) {
+                        await renderPDF(pdf);
+                    }
+
+                } catch (error) { 
+                    showErrorModal('Error processing file: ' + error.message); 
+                } 
+            }; 
+        }); 
+    </script> 
+</body> 
+</html>
