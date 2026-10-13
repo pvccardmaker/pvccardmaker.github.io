@@ -53,7 +53,7 @@ h2,h1 { margin-bottom:10px; }
 <input type="file" id="fileInput" accept=".pdf,.jpg,.jpeg,.png" class="form-control-file mt-3">
 <button id="convertButton" class="btn btn-primary">Convert</button>
 <div id="loadingIndicator" class="loading-indicator">Processing...</div>
-<div id="errorMessage" class="error-message"></div>
+<div id="errorMessage" class="error-message mt-2"></div>
 
 <!-- PVC Cards Display -->
 <div style="display:flex; justify-content:space-around; flex-wrap:wrap;">
@@ -66,7 +66,7 @@ h2,h1 { margin-bottom:10px; }
 </div>
 
 <!-- Boldness + Clarity -->
-<div class="controls-box">
+<div class="controls-box mt-4">
 <div class="control-group">
 <label class="control-label">Boldness (Thickness)</label>
 <input type="range" id="boldnessSlider" min="0" max="2" step="0.1" value="0.5" class="slider">
@@ -102,7 +102,7 @@ h2,h1 { margin-bottom:10px; }
 </div>
 
 <div class="download-container" id="downloadContainer">
-<button class="download-btn" id="downloadBtn">Download Processed Image</button>
+<button class="download-btn btn btn-primary mt-3" id="downloadBtn">Download Processed Image</button>
 </div>
 
 <canvas id="canvas" style="display:none;"></canvas>
@@ -182,38 +182,81 @@ try{return await pdfjsLib.getDocument({data,password}).promise;}
 catch(e){if(e.name==='PasswordException') return null; throw e;}
 }
 
+// Extracted render logic to handle both protected and unprotected PDFs easily
+async function renderPDF(pdf) {
+    try {
+        const page = await pdf.getPage(1);
+        const scale = 4;
+        const viewport = page.getViewport({scale});
+        const tmpCanvas = document.createElement('canvas');
+        tmpCanvas.width = viewport.width; 
+        tmpCanvas.height = viewport.height;
+        await page.render({canvasContext:tmpCanvas.getContext('2d'), viewport}).promise;
+        processPVC(tmpCanvas.toDataURL('image/png'));
+    } catch(e) {
+        document.getElementById('errorMessage').innerHTML='Error rendering PDF: ' + e.message;
+    }
+}
+
 // Convert Button
 document.getElementById('convertButton').onclick=()=>{
-const file=document.getElementById('fileInput').files[0];
-if(!file){document.getElementById('errorMessage').innerHTML='Please upload a file first.'; return;}
-if(file.type==='application/pdf'){
-$('#passwordModal').modal('show');
-document.getElementById('passwordSubmit').onclick=async()=>{
-const password=document.getElementById('passwordInput').value;
-if(!password){document.getElementById('errorMessage').innerHTML='Password required!'; return;}
-const reader=new FileReader();
-reader.readAsArrayBuffer(file);
-reader.onload=async()=>{
-try{
-let pdfData=new Uint8Array(reader.result);
-let pdf=await unlockPDF(pdfData,password);
-if(pdf){
-const page=await pdf.getPage(1);
-const scale=4, viewport=page.getViewport({scale});
-const tmpCanvas=document.createElement('canvas');
-tmpCanvas.width=viewport.width; tmpCanvas.height=viewport.height;
-await page.render({canvasContext:tmpCanvas.getContext('2d'),viewport}).promise;
-processPVC(tmpCanvas.toDataURL('image/png'));
-}else{document.getElementById('errorMessage').innerHTML='Invalid password';}
-}catch(e){document.getElementById('errorMessage').innerHTML='Error:'+e.message;}
-};
-$('#passwordModal').modal('hide');
-};
-}else{
-const reader=new FileReader();
-reader.readAsDataURL(file);
-reader.onload=e=>processPVC(e.target.result);
-}
+    const file=document.getElementById('fileInput').files[0];
+    if(!file){document.getElementById('errorMessage').innerHTML='Please upload a file first.'; return;}
+    document.getElementById('errorMessage').innerHTML=''; 
+    
+    if(file.type==='application/pdf'){
+        const reader=new FileReader();
+        reader.readAsArrayBuffer(file);
+        reader.onload=async()=>{
+            try {
+                let pdfData=new Uint8Array(reader.result);
+                let pdf = null;
+
+                try {
+                    // Try opening the PDF without a password first
+                    pdf = await pdfjsLib.getDocument({data: pdfData}).promise;
+                } catch(e) {
+                    if(e.name === 'PasswordException') {
+                        // File is protected, prompt for password
+                        $('#passwordModal').modal('show');
+                        
+                        // Use .off() to prevent duplicate events if clicked multiple times
+                        $('#passwordSubmit').off('click').on('click', async () => {
+                            const password = document.getElementById('passwordInput').value;
+                            if(!password){document.getElementById('errorMessage').innerHTML='Password required!'; return;}
+                            try {
+                                let authPdf = await unlockPDF(pdfData, password);
+                                if(authPdf){
+                                    $('#passwordModal').modal('hide');
+                                    await renderPDF(authPdf);
+                                } else {
+                                    document.getElementById('errorMessage').innerHTML='Invalid password';
+                                }
+                            } catch(err) {
+                                document.getElementById('errorMessage').innerHTML='Error: ' + err.message;
+                            }
+                        });
+                        return; // Stop here until modal is submitted
+                    } else {
+                        throw e; // Throw any non-password related errors
+                    }
+                }
+
+                // If no exception, the PDF was successfully opened without a password
+                if(pdf) {
+                    await renderPDF(pdf);
+                }
+
+            } catch(e) {
+                document.getElementById('errorMessage').innerHTML='Error: ' + e.message;
+            }
+        };
+    } else {
+        // Image files
+        const reader=new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload=e=>processPVC(e.target.result);
+    }
 };
 
 // Process PVC image and crop left/right
