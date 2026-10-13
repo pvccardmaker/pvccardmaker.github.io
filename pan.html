@@ -177,6 +177,24 @@
                 throw error; 
             } 
         } 
+        
+        // Extracted rendering logic to reuse for both protected and unprotected PDFs
+        async function renderPDF(pdf) {
+            try {
+                const page = await pdf.getPage(1); 
+                const scale = 4; 
+                const viewport = page.getViewport({ scale: scale }); 
+                const canvas = document.createElement("canvas"); 
+                const ctx = canvas.getContext("2d"); 
+                canvas.width = viewport.width; 
+                canvas.height = viewport.height;
+
+                await page.render({ canvasContext: ctx, viewport: viewport }).promise; 
+                processImage(canvas.toDataURL("image/png"));
+            } catch (error) {
+                showErrorModal('Error rendering PDF: ' + error.message);
+            }
+        }
 
         function processImage(imageData) { 
             const image = new Image(); 
@@ -221,41 +239,64 @@
                 return; 
             } 
 
-            $('#passwordModal').modal('show'); 
+            // If it's a standard image file, bypass PDF logic entirely
+            if (file.type.match('image.*')) {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = e => processImage(e.target.result);
+                return;
+            }
 
-            document.getElementById('passwordSubmit').addEventListener('click', async () => { 
-                const password = document.getElementById('passwordInput').value; 
-                if (!password) { 
-                    showErrorModal('Password is required!'); 
-                    return; 
+            // Handle PDF files
+            const reader = new FileReader(); 
+            reader.readAsArrayBuffer(file); 
+            reader.onload = async () => { 
+                try { 
+                    let pdfData = new Uint8Array(reader.result); 
+                    let pdf = null;
+                    
+                    try {
+                        // First attempt: try to open without a password
+                        pdf = await pdfjsLib.getDocument({data: pdfData}).promise;
+                    } catch (e) {
+                        if (e.name === 'PasswordException') {
+                            // File requires a password, prompt the user
+                            $('#passwordModal').modal('show'); 
+                            
+                            // Use .off() to prevent multiple bound click events
+                            $('#passwordSubmit').off('click').on('click', async () => { 
+                                const password = document.getElementById('passwordInput').value; 
+                                if (!password) { 
+                                    showErrorModal('Password is required!'); 
+                                    return; 
+                                } 
+                                try {
+                                    let authPdf = await unlockPDF(pdfData, password);
+                                    if (authPdf) {
+                                        $('#passwordModal').modal('hide');
+                                        await renderPDF(authPdf);
+                                    } else {
+                                        showErrorModal('Invalid password.'); 
+                                    }
+                                } catch (err) {
+                                    showErrorModal('Error processing file: ' + err.message); 
+                                }
+                            });
+                            return; // Stop execution here and wait for modal submit
+                        } else {
+                            throw e; // Bubble up other exceptions
+                        }
+                    }
+
+                    // If we made it here, the PDF did not have a password
+                    if (pdf) {
+                        await renderPDF(pdf);
+                    }
+
+                } catch (error) { 
+                    showErrorModal('Error processing file: ' + error.message); 
                 } 
-
-                const reader = new FileReader(); 
-                reader.readAsArrayBuffer(file); 
-                reader.onload = async () => { 
-                    try { 
-                        let pdfData = new Uint8Array(reader.result); 
-                        let pdf = await unlockPDF(pdfData, password); 
-                        if (pdf) { 
-                            const page = await pdf.getPage(1); 
-                            const scale = 4; 
-                            const viewport = page.getViewport({ scale: scale }); 
-                            const canvas = document.createElement("canvas"); 
-                            const ctx = canvas.getContext("2d"); 
-                            canvas.width = viewport.width; 
-                            canvas.height = viewport.height;
-
-                            await page.render({ canvasContext: ctx, viewport: viewport }).promise; 
-                            processImage(canvas.toDataURL("image/png"));
-                        } else { 
-                            showErrorModal('Invalid password.'); 
-                        } 
-                    } catch (error) { 
-                        showErrorModal('Error processing file: ' + error.message); 
-                    } 
-                }; 
-                $('#passwordModal').modal('hide'); 
-            }); 
+            }; 
         }); 
     </script> 
 </body> 
